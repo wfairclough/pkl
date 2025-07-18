@@ -189,3 +189,61 @@ artifacts {
     builtBy(tasks.javaExecutable)
   }
 }
+
+// Add custom task for statically linked Linux aarch64 binary
+val staticLinuxExecutableAarch64 by tasks.register("staticLinuxExecutableAarch64", NativeImageBuild::class) {
+  imageName.set("pkl-linux-aarch64-static")
+  mainClass.set("org.pkl.cli.Main")
+  arch.set(Architecture.AARCH64)
+  dependsOn(":installGraalVmAarch64")
+  
+  // Set classpath
+  classpath.from(sourceSets.main.map { it.output })
+  classpath.from(project(":pkl-commons-cli").extensions.getByType(SourceSetContainer::class)["svm"].output)
+  classpath.from(configurations.runtimeClasspath)
+  
+  // Add mostly static linking flags (static except for libc)
+  // This is suitable for distroless images that include glibc
+  extraNativeImageArgs.addAll(listOf(
+    "-H:+StaticExecutableWithDynamicLibC",
+    "-H:+ReportExceptionStackTraces"
+  ))
+  
+  // Ensure compatibility for kernels with page size set to 4k, 16k and 64k
+  extraNativeImageArgs.add("-H:PageSize=65536")
+}
+
+val assembleStaticLinuxAarch64 by tasks.registering {
+  dependsOn(staticLinuxExecutableAarch64)
+  outputs.files(staticLinuxExecutableAarch64.outputs)
+}
+
+// Add custom task for Alpine Linux ARM64 binary
+// Note: Full static linking with musl is not supported by GraalVM on ARM64
+// This creates a mostly-static binary that will work on Alpine with glibc-compat
+val alpineLinuxExecutableAarch64 by tasks.register("alpineLinuxExecutableAarch64", NativeImageBuild::class) {
+  imageName.set("pkl-alpine-linux-aarch64")
+  mainClass.set("org.pkl.cli.Main")
+  arch.set(Architecture.AARCH64)
+  dependsOn(":installGraalVmAarch64")
+  
+  // Set classpath
+  classpath.from(sourceSets.main.map { it.output })
+  classpath.from(project(":pkl-commons-cli").extensions.getByType(SourceSetContainer::class)["svm"].output)
+  classpath.from(configurations.runtimeClasspath)
+  
+  // Use mostly-static linking (static except for libc)
+  // Alpine users will need to install gcompat (glibc compatibility layer)
+  extraNativeImageArgs.addAll(listOf(
+    "-H:+StaticExecutableWithDynamicLibC",
+    "-H:+ReportExceptionStackTraces"
+  ))
+  
+  // Ensure compatibility for kernels with page size set to 4k, 16k and 64k
+  extraNativeImageArgs.add("-H:PageSize=65536")
+}
+
+val assembleAlpineLinuxAarch64 by tasks.registering {
+  dependsOn(alpineLinuxExecutableAarch64)
+  outputs.files(alpineLinuxExecutableAarch64.outputs)
+}
